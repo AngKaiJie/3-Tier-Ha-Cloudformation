@@ -1,0 +1,814 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Create a 3 Tier achitecture with High Avaliability
+
+#------------------------------------------------------------------------ Parameters ------------------------------------------------------------------------------------#
+
+Parameters:
+
+  EnvironmentName:
+    Description: environment name
+    Type: String
+    Default: 3-Tier-HA 
+
+# VPC
+  VPCCIDR:
+    Description: Enter the IP range for this VPC
+    Type: String
+    Default: 10.2.0.0/16
+  
+  VPCNAME: 
+    Description: Name of VPC
+    Type: String
+    Default: aws3tier1
+# Internet Gateway
+  IGWNAME:
+    Description: Name of Internet Gateway
+    Type: String
+    Default: 3tier-igw1
+# Subnets
+  Subnet1CIDR:
+    Description: Enter the IP range for Subnet1
+    Type: String
+    Default: 10.2.1.0/24
+
+  Subnet1Name:
+    Description: Define Name of subnet 1
+    Type: String
+    Default: public-dashboard-AZ1a
+   
+  Subnet2CIDR:
+    Description: Enter the IP range for Subnet2
+    Type: String
+    Default: 10.2.2.0/24
+
+  Subnet2Name:
+    Description: Define Name of subnet 2
+    Type: String
+    Default: public-engine-AZ1a
+
+  Subnet3CIDR:
+    Description: Enter the IP range for Subnet3
+    Type: String
+    Default: 10.2.3.0/24
+
+  Subnet3Name:
+    Description: Define Name of subnet 3
+    Type: String
+    Default: private-db-AZ1a
+
+  Subnet4CIDR:
+    Description: Enter the IP range for Subnet4
+    Type: String
+    Default: 10.2.4.0/24
+
+  Subnet4Name:
+    Description: Define Name of subnet 4
+    Type: String
+    Default: public-dashboard-AZ2b
+
+  Subnet5CIDR:
+    Description: Enter the IP range for Subnet5
+    Type: String
+    Default: 10.2.5.0/24
+
+  Subnet5Name:
+    Description: Define Name of subnet 5
+    Type: String
+    Default: public-engine-AZ2b
+
+  Subnet6CIDR:
+    Description: Enter the IP range for Subnet6
+    Type: String
+    Default: 10.2.6.0/24
+
+  Subnet6Name:
+    Description: Define Name of subnet 6
+    Type: String
+    Default: private-db-AZ2b
+
+  Subnet1to3AZ:
+    Description: Define Avaliability zone for subnet 1-3 
+    Type: String
+    Default: us-east-1a  # change it according to the region's avaliability zone you are launching in
+
+  Subnet4to6AZ:
+    Description: Define Avaliability zone for subnet 4-6
+    Type: String
+    Default: us-east-1b  # change it according to the region's avaliability zone you are launching in
+# Route table 
+  DBRouteName:
+    Description: Define Name for dashboard route table
+    Type: String
+    Default: public-dashboard-RT1
+  
+  EngineRouteName:
+    Description: Define Name for Engine route table
+    Type: String
+    Default: public-engine-RT1
+  
+  PrivateDBrouteName:
+    Description: Define Name for database route table
+    Type: String
+    Default: private-db-RT1
+# Security Group
+  FrontendSGName:
+    Description: Define Name for Frontend Security Group
+    Type: String
+    Default: FrontendSG1
+
+  BackendSGName:
+    Description: Define Name for Backend Security Group
+    Type: String
+    Default: BackendSG1
+
+  RDSSGName:
+    Description: Define Name for RDS Security Group
+    Type: String
+    Default: DBSG1
+  
+  ALBSGName:
+    Description: Define Name for Application Load Balancer Security Group
+    Type: String
+    Default: ALB-SG1
+
+  NLBSGName:
+    Description: Define Name for Network Load Balancer Security Group
+    Type: String
+    Default: NLB-SG1
+
+  BastionSGName:
+    Description: Define Name for Bastion Host Security Group
+    Type: String
+    Default: BastionSG1
+# RDS
+  Rdsname:
+    Description: Name RDS instance
+    Type: String
+    Default: mydb1
+
+  Masterusername:
+    Description: Specify value of master username for RDS database
+    Type: String
+    Default: admin
+
+  Masteruserpassword:
+    Description: Specify value of master password for RDS database
+    Type: String
+    Default: Aiot1483!
+# ALB & NLB 
+  ALBName:
+    Description: Define name for application load balancer
+    Type: String
+    Default: Dashboard-ALB1
+
+  NLBName: 
+    Description: Define name for network load balancer
+    Type: String
+    Default: Engine-NLB1
+# Launch Template
+  FrontendLTName:
+    Description: Define name for frontend launch template
+    Type: String
+    Default: Testing-frontend1  
+  
+  BackendLTName:
+    Description: Define name for backend launch template
+    Type: String
+    Default: Testing-backend1 
+
+  BastionLTName:
+    Description: Define name for bastion host launch template
+    Type: String
+    Default: Testing-bastion1
+# Auto-Scaling group
+  FrontendASGName:
+    Description: Define name for frontend ASG
+    Type: String
+    Default: 3tier-frontendAS1
+  
+  BackendASGName:
+    Description: Define name for Backend ASG
+    Type: String
+    Default: 3tier-engineAS1
+
+  BastionASGName:
+    Description: Define name for Bastion Host ASG
+    Type: String
+    Default: BastionHostASG
+# Key
+  Keyname1:
+    Description: Specify name of key for linux (.ppk)
+    Type: String
+    Default: vockey2
+  
+  Keyname2:
+    Description: Specify name of key for windows (.pem)
+    Type: String
+    Default: vockey3
+# AMI
+  UbuntuAMI:
+    Description: ID of Ubuntu version 22.04 AMI
+    Type: String 
+    Default: ami-0c7217cdde317cfec  # Ami id varies according to region, so check and change accordingly
+
+  WindowsAMI:
+    Description: ID of Windows 2022 base AMI  
+    Type: String 
+    Default: ami-00d990e7e5ece7974  # Ami id varies according to region, so check and change accordingly
+
+#----------------------------------------------------------------------------- VPC, IGW ---------------------------------------------------------------------------------#
+
+Resources:
+#Create VPC named aws3tier
+  MyVPC: 
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: !Ref VPCCIDR
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags:
+        - Key: Name
+          Value: !Ref VPCNAME
+
+#Create an internet gateway + attach to VPC
+  MyInternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Ref IGWNAME
+
+  AttachGateway:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref MyVPC
+      InternetGatewayId: !Ref MyInternetGateway
+
+#--------------------------------------------------------------------------- Subnets ------------------------------------------------------------------------------------#
+
+#Create the 6 subnets
+  Subnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref MyVPC
+      AvailabilityZone: !Ref Subnet1to3AZ
+      MapPublicIpOnLaunch: true
+      CidrBlock: !Ref Subnet1CIDR
+      Tags:
+        - Key: Name
+          Value: !Ref Subnet1Name
+  Subnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref MyVPC
+      AvailabilityZone: !Ref Subnet1to3AZ
+      MapPublicIpOnLaunch: true
+      CidrBlock: !Ref Subnet2CIDR
+      Tags:
+        - Key: Name
+          Value: !Ref Subnet2Name
+
+  Subnet3:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref MyVPC
+      AvailabilityZone: !Ref Subnet1to3AZ
+      MapPublicIpOnLaunch: false
+      CidrBlock: !Ref Subnet3CIDR
+      Tags:
+        - Key: Name
+          Value: !Ref Subnet3Name
+
+  Subnet4:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref MyVPC
+      AvailabilityZone: !Ref Subnet4to6AZ
+      MapPublicIpOnLaunch: true
+      CidrBlock: !Ref Subnet4CIDR
+      Tags:
+        - Key: Name
+          Value: !Ref Subnet4Name
+
+  Subnet5:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref MyVPC
+      AvailabilityZone: !Ref Subnet4to6AZ
+      MapPublicIpOnLaunch: true
+      CidrBlock: !Ref Subnet5CIDR
+      Tags:
+        - Key: Name
+          Value: !Ref Subnet5Name
+
+  Subnet6:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref MyVPC
+      AvailabilityZone: !Ref Subnet4to6AZ
+      MapPublicIpOnLaunch: false
+      CidrBlock: !Ref Subnet6CIDR
+      Tags:
+        - Key: Name
+          Value: !Ref Subnet6Name
+
+#------------------------------------------------------------------------- Route table & Routes -------------------------------------------------------------------------#
+
+# Create 3 Routing Tables  
+  PublicDashboardRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref MyVPC
+      Tags:
+        - Key: Name
+          Value: !Ref DBRouteName
+
+  PublicEngineRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref MyVPC
+      Tags:
+        - Key: Name
+          Value: !Ref EngineRouteName
+
+  PrivateDbRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref MyVPC
+      Tags:
+        - Key: Name
+          Value: !Ref PrivateDBrouteName
+
+# Create 2 route table routes
+  PublicDashboardRoute:
+    Type: AWS::EC2::Route
+    DependsOn: MyInternetGateway
+    Properties:
+      RouteTableId: !Ref PublicDashboardRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref MyInternetGateway
+
+  PublicEngineRoute:
+    Type: AWS::EC2::Route
+    DependsOn: MyInternetGateway
+    Properties:
+      RouteTableId: !Ref PublicEngineRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref MyInternetGateway
+
+#------------------------------------------------------------------- Subnet Route Table Associations --------------------------------------------------------------------#
+  
+  PublicDashboardSubnetAssociation1:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref Subnet1
+      RouteTableId: !Ref PublicDashboardRouteTable
+
+  PublicDashboardSubnetAssociation2:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref Subnet4
+      RouteTableId: !Ref PublicDashboardRouteTable
+
+  PublicEngineSubnetAssociation1:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref Subnet2
+      RouteTableId: !Ref PublicEngineRouteTable
+
+  PublicEngineSubnetAssociation2:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref Subnet5
+      RouteTableId: !Ref PublicEngineRouteTable
+
+  PrivateDbSubnetAssociation1:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref Subnet3
+      RouteTableId: !Ref PrivateDbRouteTable
+
+  PrivateDbSubnetAssociation2:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref Subnet6
+      RouteTableId: !Ref PrivateDbRouteTable
+
+#------------------------------------------------------------------------ Security Groups -------------------------------------------------------------------------------#
+
+# Create a security group for Frontend Instance
+  FrontendSG:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Ref FrontendSGName
+      GroupDescription: Security Group for Frontend 
+      VpcId: !Ref MyVPC
+      SecurityGroupIngress:
+        - CidrIp: 0.0.0.0/0
+          FromPort: 22
+          ToPort: 22
+          IpProtocol: tcp
+        - CidrIp: 0.0.0.0/0
+          Description: MQTT
+          FromPort: 1883
+          ToPort: 1883
+          IpProtocol: tcp
+        - CidrIp: 0.0.0.0/0
+          Description: HTTPS
+          FromPort: 443
+          ToPort: 443
+          IpProtocol: tcp
+        - CidrIp: 0.0.0.0/0
+          Description: for frontend
+          FromPort: 3000
+          ToPort: 3000
+          IpProtocol: tcp
+        - CidrIp: 0.0.0.0/0
+          Description: HTTP
+          FromPort: 80
+          ToPort: 80
+          IpProtocol: tcp  
+        - CidrIp: 0.0.0.0/0
+          Description: SQL
+          FromPort: 3306
+          ToPort: 3306
+          IpProtocol: tcp
+
+# Create a security group for Backend Instance
+  BackendSG:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Ref BackendSGName
+      GroupDescription: Security Group for Backend
+      VpcId: !Ref MyVPC
+      SecurityGroupIngress:
+        - CidrIp: 0.0.0.0/0
+          Description: EMQX
+          FromPort: 18083
+          ToPort: 18083
+          IpProtocol: tcp
+        - CidrIp: 0.0.0.0/0
+          Description: SSH
+          FromPort: 22
+          ToPort: 22
+          IpProtocol: tcp
+        - CidrIp: 0.0.0.0/0
+          Description: MQTT
+          FromPort: 1883
+          ToPort: 1883
+          IpProtocol: tcp
+        - CidrIp: 0.0.0.0/0
+          Description: Backend
+          FromPort: 3001
+          ToPort: 3001
+          IpProtocol: tcp
+        - CidrIp: 0.0.0.0/0
+          Description: SQL
+          FromPort: 3306
+          ToPort: 3306
+          IpProtocol: tcp
+        - CidrIp: 0.0.0.0/0 
+          Description: Frontend
+          FromPort: 3000
+          ToPort: 3000
+          IpProtocol: tcp
+
+#Create a security group for RDS
+  RDSSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Ref RDSSGName
+      GroupDescription: Security Group for RDS
+      VpcId: !Ref MyVPC
+      SecurityGroupIngress:
+        - CidrIp: 0.0.0.0/0
+          Description: Security group for RDS to backend
+          FromPort: 3306
+          ToPort: 3306
+          IpProtocol: tcp
+
+#Create an application load balancer Security Group
+  ALBSG:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Ref ALBSGName
+      GroupDescription: Security Group for Application load balancer
+      VpcId: !Ref MyVPC
+      SecurityGroupIngress:
+        - CidrIp: 0.0.0.0/0
+          Description: HTTP
+          FromPort: 80
+          ToPort: 80
+          IpProtocol: tcp  
+        - CidrIp: 0.0.0.0/0 
+          Description: Frontend
+          FromPort: 3000
+          ToPort: 3000
+          IpProtocol: tcp
+        - CidrIp: 0.0.0.0/0
+          Description: MQTT
+          FromPort: 1883
+          ToPort: 1883
+          IpProtocol: tcp
+        - CidrIp: 0.0.0.0/0
+          Description: HTTPS
+          FromPort: 443
+          ToPort: 443
+          IpProtocol: tcp
+        - CidrIp: 0.0.0.0/0
+          Description: Backend
+          FromPort: 3001
+          ToPort: 3001
+          IpProtocol: tcp 
+
+#Create network load balancer Security Group
+  NLBSG:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Ref NLBSGName
+      GroupDescription: Security Group for Network load balancer
+      VpcId: !Ref MyVPC
+      SecurityGroupIngress:
+        - CidrIp: 0.0.0.0/0
+          Description: Backend
+          FromPort: 3001
+          ToPort: 3001
+          IpProtocol: tcp
+        - CidrIp: 0.0.0.0/0
+          Description: MQTT
+          FromPort: 1883
+          ToPort: 1883
+          IpProtocol: tcp
+        - CidrIp: 0.0.0.0/0 
+          Description: Frontend
+          FromPort: 3000
+          ToPort: 3000
+          IpProtocol: tcp
+        - CidrIp: 0.0.0.0/0
+          Description: HTTP
+          FromPort: 80
+          ToPort: 80
+          IpProtocol: tcp 
+        - CidrIp: 0.0.0.0/0
+          Description: HTTPS
+          FromPort: 443
+          ToPort: 443
+          IpProtocol: tcp
+
+#Create a Security group for Bastion Host
+  BastionHostSG:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Ref BastionSGName
+      GroupDescription: Security Group for Bastion Host
+      VpcId: !Ref MyVPC
+      SecurityGroupIngress:
+        - CidrIp: 0.0.0.0/0
+          Description: Security group for RDS
+          FromPort: 3306
+          ToPort: 3306
+          IpProtocol: tcp
+        - CidrIp: 0.0.0.0/0
+          Description: RDP connection
+          FromPort: 3389
+          ToPort: 3389
+          IpProtocol: tcp
+
+#------------------------------------------------------------------------ RDS & RDS Subnet group ------------------------------------------------------------------------#
+
+#Create a Subnet group for RDS
+  RDSSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupName: aiotcube1
+      DBSubnetGroupDescription: db subnet group for RDS
+      SubnetIds:
+        - !Ref Subnet3
+        - !Ref Subnet6
+#Create a RDS instance
+  RDSInstance:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      AllocatedStorage: 20
+      AutoMinorVersionUpgrade: true
+      BackupRetentionPeriod: 7
+      CopyTagsToSnapshot: true
+      DBInstanceClass: db.t3.medium
+      DBInstanceIdentifier: dbaiotcube1
+      DBName: !Ref Rdsname
+      Engine: mysql
+      EngineVersion: 8.0.32
+      LicenseModel: general-public-license
+      MasterUsername: !Ref Masterusername
+      MasterUserPassword: !Ref Masteruserpassword
+      MultiAZ: true
+      PubliclyAccessible: true
+      StorageType: gp2
+      VPCSecurityGroups:
+        - !Ref RDSSecurityGroup
+      DBSubnetGroupName: !Ref RDSSubnetGroup
+      Tags:
+        - Key: Name
+          Value: aiotcube1
+
+#--------------------------------------------------------------------------- Target Group ------------------------------------------------------------------------------#
+
+#Create Target Groups
+  TGDashboard1:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: TG-dashboard1
+      Protocol: HTTP
+      Port: 3000
+      TargetType: instance
+      VpcId: !Ref MyVPC
+      HealthCheckProtocol: HTTP
+      HealthCheckPath: / 
+
+  TGEngine1:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: TG-engine1
+      Protocol: TCP
+      Port: 3001
+      TargetType: instance
+      VpcId: !Ref MyVPC
+      HealthCheckProtocol: TCP
+
+  TGMQTT1:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: MQTT1
+      Protocol: TCP
+      Port: 1883
+      TargetType: instance
+      VpcId: !Ref MyVPC
+      HealthCheckProtocol: TCP 
+
+#--------------------------------------------------------------------------- Load Balancers -----------------------------------------------------------------------------#
+
+#Create an application load balancer          
+  MyALB:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: !Ref ALBName
+      Scheme: internet-facing
+      IpAddressType: ipv4
+      Subnets:
+        - !Ref Subnet1
+        - !Ref Subnet4
+      SecurityGroups:
+        - !Ref ALBSG
+      Tags:
+        - Key: Name
+          Value: !Ref ALBName
+
+  ALBListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref TGDashboard1
+      LoadBalancerArn: !Ref MyALB
+      Port: 80
+      Protocol: HTTP
+
+#Create a network load balancer 
+  MyNLB:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: !Ref NLBName
+      Scheme: internet-facing
+      IpAddressType: ipv4
+      Type: network 
+      Subnets:
+        - !Ref Subnet2
+        - !Ref Subnet5
+      SecurityGroups:
+        - !Ref NLBSG
+      Tags:
+        - Key: Name
+          Value: !Ref NLBName
+
+  NLBListener1:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref TGMQTT1
+      LoadBalancerArn: !Ref MyNLB
+      Port: 1883
+      Protocol: TCP
+
+  NLBListener2:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref TGEngine1
+      LoadBalancerArn: !Ref MyNLB
+      Port: 3001
+      Protocol: TCP
+
+#------------------------------------------------------------------ Launch Template & Auto Scaling Group ----------------------------------------------------------------#
+
+#Create launch template for frontend instance
+  FrontendLaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Properties:
+      LaunchTemplateName: !Ref FrontendLTName
+      LaunchTemplateData:
+        DisableApiTermination: true
+        ImageId: !Ref UbuntuAMI
+        InstanceType: t2.medium
+        KeyName: vockey2
+        SecurityGroupIds:
+          - !Ref FrontendSG
+
+#Create launch template for backend instance
+  BackendLaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Properties:
+      LaunchTemplateName: !Ref BackendLTName
+      LaunchTemplateData:
+        DisableApiTermination: true
+        ImageId: !Ref UbuntuAMI
+        InstanceType: t2.medium
+        KeyName: vockey2
+        SecurityGroupIds:
+          -  !Ref BackendSG
+
+#Create launch template for bastion instance
+  BastionLaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Properties:
+      LaunchTemplateName: !Ref BastionLTName
+      LaunchTemplateData:
+        DisableApiTermination: true
+        ImageId: !Ref WindowsAMI
+        InstanceType: t2.medium
+        KeyName: vockey3
+        SecurityGroupIds:
+          -  !Ref BastionHostSG
+
+#Create Auto-scaling group for Frontend
+  FrontendAutoScalingGroup:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      AutoScalingGroupName: !Ref FrontendASGName
+      LaunchTemplate:
+        LaunchTemplateId: !Ref FrontendLaunchTemplate
+        Version: !GetAtt FrontendLaunchTemplate.LatestVersionNumber
+      VPCZoneIdentifier:
+        - !Ref Subnet1
+        - !Ref Subnet4
+      MinSize: 1
+      MaxSize: 1
+      DesiredCapacity: 1
+      TargetGroupARNs:
+        - !Ref TGDashboard1
+      Tags:
+        - Key: Name
+          Value: !Ref FrontendASGName
+          PropagateAtLaunch: true
+
+#Create Auto-scaling group for Backend
+  BackendAutoScalingGroup:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      AutoScalingGroupName: !Ref BackendASGName
+      LaunchTemplate:
+        LaunchTemplateId: !Ref BackendLaunchTemplate
+        Version: !GetAtt BackendLaunchTemplate.LatestVersionNumber
+      VPCZoneIdentifier:
+        - !Ref Subnet2
+        - !Ref Subnet5
+      MinSize: 1
+      MaxSize: 1
+      DesiredCapacity: 1
+      TargetGroupARNs:
+        - !Ref TGEngine1
+        - !Ref TGMQTT1
+      Tags:
+        - Key: Name
+          Value: !Ref BackendASGName
+          PropagateAtLaunch: true
+
+#Create Auto-scaling group for Bastion Host
+  BastionAutoScalingGroup:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      AutoScalingGroupName: !Ref BastionASGName
+      LaunchTemplate:
+        LaunchTemplateId: !Ref BastionLaunchTemplate
+        Version: !GetAtt BastionLaunchTemplate.LatestVersionNumber
+      VPCZoneIdentifier:
+        - !Ref Subnet1
+        - !Ref Subnet4
+      MinSize: 1
+      MaxSize: 1
+      DesiredCapacity: 1
+      Tags:
+        - Key: Name
+          Value: !Ref BastionASGName
+          PropagateAtLaunch: true
